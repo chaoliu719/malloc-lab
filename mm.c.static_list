@@ -1,0 +1,228 @@
+/*
+ * mm-naive.c - The fastest, least memory-efficient malloc package.
+ *
+ * In this naive approach, a block is allocated by simply incrementing
+ * the brk pointer.  A block is pure payload. There are no headers or
+ * footers.  Blocks are never coalesced or reused. Realloc is
+ * implemented directly using mm_malloc and mm_free.
+ *
+ * NOTE TO STUDENTS: Replace this header comment with your own header
+ * comment that gives a high level description of your solution.
+ */
+
+#include "./mm.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <unistd.h>
+#include <string.h>
+
+#include "./memlib.h"
+
+/*********************************************************
+ * NOTE TO STUDENTS: Before you do anything else, please
+ * provide your team information in the following struct.
+ ********************************************************/
+team_t team = {
+        /* Team name */
+        "",
+        /* First member's full name */
+        "",
+        /* First member's email address */
+        "",
+        /* Second member's full name (leave blank if none) */
+        "",
+        /* Second member's email address (leave blank if none) */
+        ""
+};
+
+/* single word (4) or double word (8) alignment */
+#define ALIGNMENT 8
+
+
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(free_size) (((free_size) + (ALIGNMENT-1)) & ~0x7)
+
+
+#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+#define AVAILABLE(now_block) ((void *)((char *)now_block + SIZE_T_SIZE))
+
+#define GET_USED(now_block) (*(size_t *)now_block & 0x1)
+#define SET_USED(now_block) (*(size_t *)now_block |= 0x1)
+#define CLEAR_USED(now_block) (*(size_t *)now_block &= ~0x1)
+
+
+#define GET_LAST_USED(now_block) (*(size_t *)now_block & 0x2)
+#define SET_LAST_USED(now_block) (*(size_t *)now_block |= 0x2)
+#define CLEAR_LAST_USED(now_block) (*(size_t *)now_block &= ~0x2)
+
+
+#define BLOCK_SIZE(now_block) (*(size_t *)now_block & ~0x7)
+#define SET_SIZE(now_block, new_size) (*(size_t *)now_block = new_size | GET_USED(now_block) | GET_LAST_USED(now_block))
+
+#define BLOCK_TAIL(now_block) ((void *) ((char *)now_block + BLOCK_SIZE(now_block) - SIZE_T_SIZE))
+#define NEXT_BLOCK(now_block) ((void *) ((char *)now_block + BLOCK_SIZE(now_block)))
+#define NEXT_BLOCK_TAIL(now_block) ((void *) (BLOCK_TAIL(NEXT_BLOCK(now_block))))
+#define PREV_BLOCK_TAIL(now_block) ((void *) ((char *)now_block - SIZE_T_SIZE))
+#define PREV_BLOCK(now_block) ((void *) ((char *)now_block - BLOCK_SIZE(PREV_BLOCK_TAIL(now_block))))
+
+
+#define DISP_PROGRESS() {static int c = 0; if (!c) {printf("123456");}c++;\
+    if (c % 50 == 0) {printf("\b\b\b\b\b\b%5.2f%%", (double)c*100/731821);}\
+    if (c > 730000) {printf("\b\b\b\b\b\b      ");}fflush(stdout);\
+}
+
+
+/*
+ * mm_init - initialize the malloc package.
+ */
+int mm_init(void)
+{
+    return 0;
+}
+
+/*
+ * mm_malloc - Allocate a block by incrementing the brk pointer.
+ *     Always allocate a block whose free_size is a multiple of the alignment.
+ */
+void *mm_malloc(size_t free_size)
+{
+    // print progress
+    DISP_PROGRESS();
+
+    size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
+    void *heap_start = mem_heap_lo();
+    void *heap_end = mem_heap_hi() + 1;
+    void *now_block = heap_start;  // first fit
+    int last_block_used = 0;
+
+    for (;;)
+    {
+        if (now_block == heap_end)
+        {
+            if (mem_sbrk(new_size) == (void *) -1)
+            {
+                return NULL;
+            }
+            else
+            {
+                SET_SIZE(now_block, new_size);
+                SET_USED(now_block);
+                *(size_t *) now_block |= last_block_used << 1;
+                return AVAILABLE(now_block);
+            }
+        }
+
+        if (GET_USED(now_block) == 0 && BLOCK_SIZE(now_block) >= new_size)
+        {
+            if (BLOCK_SIZE(now_block) - new_size >= 4)
+            {
+                if (NEXT_BLOCK(now_block) <= mem_heap_hi())
+                {
+                    CLEAR_LAST_USED(NEXT_BLOCK(now_block));
+                    CLEAR_LAST_USED(NEXT_BLOCK_TAIL(now_block));
+                }
+
+                size_t remain = BLOCK_SIZE(now_block) - new_size;
+                void *remain_block = (char *) now_block + new_size;
+
+                SET_SIZE(remain_block, remain);
+                CLEAR_USED(remain_block);
+                SET_LAST_USED(remain_block);
+                *(size_t * )BLOCK_TAIL(remain_block) = *(size_t *) remain_block;
+            }
+            else
+            {
+                new_size = BLOCK_SIZE(now_block);
+                if (NEXT_BLOCK(now_block) <= mem_heap_hi())
+                {
+                    SET_LAST_USED(NEXT_BLOCK(now_block));
+                    SET_LAST_USED(NEXT_BLOCK_TAIL(now_block));
+                }
+            }
+
+            SET_SIZE(now_block, new_size);
+            SET_USED(now_block);
+            *(size_t *) now_block |= last_block_used << 1;
+            return AVAILABLE(now_block);
+        }
+        else
+        {
+            last_block_used = GET_USED(now_block);
+            now_block = (void *) ((char *) now_block + BLOCK_SIZE(now_block));
+        }
+    }
+}
+
+/*
+ * mm_free - Freeing a block does nothing.
+ */
+void mm_free(void *ptr)
+{
+    void *now_block = (void *) ((char *) ptr - SIZE_T_SIZE);
+    size_t free_size = BLOCK_SIZE(now_block);
+    void *next_block = NEXT_BLOCK(now_block);
+
+    while (0 == GET_USED(next_block) && next_block <= mem_heap_hi())
+    {
+        free_size += BLOCK_SIZE(next_block);
+        next_block = NEXT_BLOCK(next_block);
+    }
+    if (next_block <= mem_heap_hi())
+    {
+        CLEAR_LAST_USED(next_block);
+        CLEAR_LAST_USED(BLOCK_TAIL(next_block));
+    }
+
+    void *prev_block = NULL;
+    while (now_block > mem_heap_lo() && 0 == GET_LAST_USED(now_block))
+    {
+        prev_block = PREV_BLOCK(now_block);
+        free_size += BLOCK_SIZE(prev_block);
+        now_block = prev_block;
+    }
+
+    SET_SIZE(now_block, free_size);
+    CLEAR_USED(now_block);
+    *(size_t * )BLOCK_TAIL(now_block) = *(size_t *) now_block;
+}
+
+/*
+ * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+ */
+void *mm_realloc(void *ptr, size_t free_size)
+{
+    void *oldptr = ptr;
+    void *newptr;
+    size_t copySize;
+
+    if (oldptr == NULL)
+    {
+        newptr = mm_malloc(free_size);
+        return newptr;
+    }
+
+    if (free_size == 0)
+    {
+        mm_free(oldptr);
+        return NULL;
+    }
+
+    newptr = mm_malloc(free_size);
+    if (newptr == NULL)
+    {
+        return NULL;
+    }
+
+    copySize = *(size_t * )((char *) oldptr - SIZE_T_SIZE);
+    if (free_size < copySize)
+    {
+        copySize = free_size;
+    }
+    memcpy(newptr, oldptr, copySize);
+    mm_free(oldptr);
+    return newptr;
+}
+
