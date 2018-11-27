@@ -54,24 +54,8 @@ team_t team =
 
 #define AVAILABLE(now_block) ((void *)((char *)now_block + SIZE_T_SIZE))
 
-#define GET_USED(now_block) (*(size_t *)now_block & 0x1)
-#define SET_USED(now_block) (*(size_t *)now_block |= 0x1)
-#define CLEAR_USED(now_block) (*(size_t *)now_block &= ~0x1)
-
-
-#define GET_LAST_USED(now_block) (*(size_t *)now_block & 0x2)
-#define SET_LAST_USED(now_block) (*(size_t *)now_block |= 0x2)
-#define CLEAR_LAST_USED(now_block) (*(size_t *)now_block &= ~0x2)
-
-
 #define BLOCK_SIZE(now_block) (*(size_t *)now_block & ~0x7)
-#define SET_SIZE(now_block, new_size) (*(size_t *)now_block = new_size | GET_USED(now_block) | GET_LAST_USED(now_block))
-
-#define BLOCK_TAIL(now_block) ((void *) ((char *)now_block + BLOCK_SIZE(now_block) - SIZE_T_SIZE))
-#define NEXT_BLOCK(now_block) ((void *) ((char *)now_block + BLOCK_SIZE(now_block)))
-#define NEXT_BLOCK_TAIL(now_block) ((void *) (BLOCK_TAIL(NEXT_BLOCK(now_block))))
-#define PREV_BLOCK_TAIL(now_block) ((void *) ((char *)now_block - SIZE_T_SIZE))
-#define PREV_BLOCK(now_block) ((void *) ((char *)now_block - BLOCK_SIZE(PREV_BLOCK_TAIL(now_block))))
+#define SET_SIZE(now_block, new_size) (*(size_t *)now_block = new_size)
 
 #define GET_NEXT_FREE_ADDR(now_block) ((void *) ((char *)now_block + sizeof(size_t) + sizeof(size_t *)))
 #define GET_PREV_FREE_ADDR(now_block) ((void *) ((char *)now_block + sizeof(size_t)))
