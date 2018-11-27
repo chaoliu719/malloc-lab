@@ -67,25 +67,27 @@ team_t team =
 
 /* ---------------------------------------Debug------------------------------------------- */
 
-#define DEBUG 1
 int c = 0;
 
 void DISP_PROGRESS()
 {
-    c++;
-    if (DEBUG || c % 1000 == 0)
+    if (DISP)
     {
-        printf("\r%d", c);
-    }
+        c++;
+        if (c % 1000 == 0)
+        {
+            printf("\r%d", c);
+        }
 
-    if (c == 212)
-    {
-        int a = 1;
-    }
+        if (DEBUG && c == 445)
+        {
+            int a = 1;
+        }
 
-    if (c == 1578816)
-    { printf("\r-----completed-----\n"); }
-    fflush(stdout);
+        if (c == 1578816)
+        { printf("\r-----completed-----\n"); }
+        fflush(stdout);
+    }
 }
 
 
@@ -146,12 +148,13 @@ void list_insert_after(List *free_list, void *prev_block, void *block)
         // insert head
         SET_NEXT_FREE(block, free_list->head);
         SET_PREV_FREE(block, NULL);
-        free_list->head = block;
 
         if (0 != free_list->cnt)
         {
             SET_PREV_FREE(free_list->head, block);
         }
+
+        free_list->head = block;
     }
     else
     {
@@ -435,7 +438,7 @@ void * split(List *free_list, void * block, size_t new_size)
         SET_SIZE(block, remain);
         // Remain block need not be removed
 
-        void *new_block = (void *) ((char *) block + new_size);
+        void *new_block = (void *) ((char *) block + remain);
         SET_SIZE(new_block, new_size);
 
         return new_block;
