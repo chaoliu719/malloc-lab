@@ -73,15 +73,32 @@ team_t team =
 #define PREV_BLOCK_TAIL(now_block) ((void *) ((char *)now_block - SIZE_T_SIZE))
 #define PREV_BLOCK(now_block) ((void *) ((char *)now_block - BLOCK_SIZE(PREV_BLOCK_TAIL(now_block))))
 
-#define GET_NEXT_FREE(now_block) ((void *) ((char *)now_block + sizeof(size_t) + sizeof(size_t *)))
-#define GET_PREV_FREE(now_block) ((void *) ((char *)now_block + sizeof(size_t)))
-#define SET_NEXT_FREE(now_block, next_block) {size_t ** tmp = (size_t **) GET_NEXT_FREE(now_block); *tmp = (size_t *)next_block;}
-#define SET_PREV_FREE(now_block, prev_block) {size_t ** tmp = (size_t **) GET_PREV_FREE(now_block); *tmp = (size_t *)prev_block;}
+#define GET_NEXT_FREE_ADDR(now_block) ((void *) ((char *)now_block + sizeof(size_t) + sizeof(size_t *)))
+#define GET_PREV_FREE_ADDR(now_block) ((void *) ((char *)now_block + sizeof(size_t)))
+#define GET_NEXT_FREE(now_block) ((void *) *(size_t *)GET_NEXT_FREE_ADDR(now_block))
+#define GET_PREV_FREE(now_block) ((void *) *(size_t *)GET_PREV_FREE_ADDR(now_block))
+#define SET_NEXT_FREE(now_block, next_block) {size_t ** tmp = (size_t **) GET_NEXT_FREE_ADDR(now_block); *tmp = (size_t *)next_block;}
+#define SET_PREV_FREE(now_block, prev_block) {size_t ** tmp = (size_t **) GET_PREV_FREE_ADDR(now_block); *tmp = (size_t *)prev_block;}
 
+#define DEBUG 1
+int c = 0;
 
-#define DISP_PROGRESS() {static int c = 0; if (!c) {printf("123456");}c++;\
-    if (c % 50 == 0) {printf("\b\b\b\b\b\b%5.2f%%", (double)c*100/731821);}\
-    if (c > 730000) {printf("\b\b\b\b\b\b      ");}fflush(stdout);\
+void DISP_PROGRESS()
+{
+    c++;
+    if (DEBUG || c % 1000 == 0)
+    {
+        printf("\r%d", c);
+    }
+
+    if (c == 209)
+    {
+        int a = 1;
+    }
+
+    if (c == 1578816)
+    { printf("\r-----completed-----\n"); }
+    fflush(stdout);
 }
 
 typedef struct _list
@@ -145,6 +162,8 @@ void *mm_malloc(size_t free_size)
  */
 void mm_free(void *ptr)
 {
+    DISP_PROGRESS();
+
     void *now_block = (void *) ((char *) ptr - SIZE_T_SIZE);
 
     _mm_free(now_block, push_lifo, merge_lifo);
@@ -155,6 +174,8 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t free_size)
 {
+    DISP_PROGRESS();
+
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
@@ -214,6 +235,7 @@ void *_mm_malloc(List *free_list, size_t new_size, void *(*get_block)(List *, si
         SET_SIZE(now_block, remain);
         *(size_t * )BLOCK_TAIL(now_block) = *(size_t *) now_block;
         // Remain block need not change its position in global free list
+        // But it need be added into list if it is new generated.
 
         SET_SIZE(new_block, new_size);
         CLEAR_LAST_USED(new_block);
@@ -368,7 +390,6 @@ void merge_lifo(void *block)
 
         *(size_t * )BLOCK_TAIL(now_block) = *(size_t *) now_block;
     }
-
     else if (NEXT_BLOCK(now_block) <= mem_heap_hi() && 0 == GET_USED(NEXT_BLOCK(now_block)))
     {
         //able to merge with next block
@@ -503,4 +524,3 @@ void merge_ao(void *block)
         SET_PREV_FREE(next_free, now_block);
     }
 }
-
