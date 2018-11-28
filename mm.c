@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <limits.h>
 
 #include <unistd.h>
 #include <string.h>
@@ -79,7 +80,7 @@ void DISP_PROGRESS()
             printf("\r%d", c);
         }
 
-        if (DEBUG && c == 445)
+        if (DEBUG && c == 349)
         {
             int a = 1;
         }
@@ -162,8 +163,11 @@ void list_insert_after(List *free_list, void *prev_block, void *block)
         void * next_free = GET_NEXT_FREE(prev_block);
         SET_NEXT_FREE(block, next_free);
         SET_PREV_FREE(block, prev_block);
-        SET_PREV_FREE(next_free, block);
         SET_NEXT_FREE(prev_block, block);
+        if (next_free != NULL)
+        {
+            SET_PREV_FREE(next_free, block);
+        }
     }
 
     free_list->cnt += 1;
@@ -225,7 +229,6 @@ void mm_free(void *ptr)
     void *now_block = (void *) ((char *) ptr - SIZE_T_SIZE);
 
     _mm_free(now_block, ao_free);
-    //TODO: Debug ao_free in expr-bal.rep
 }
 
 /*
@@ -303,9 +306,9 @@ void *get_first_fit(List *free_list, size_t new_size)
 
 void *get_best_fit(List *free_list, size_t new_size)
 {
-    size_t min_diff = (size_t) - 1;
+    long long int min_diff = LLONG_MIN;
     void *min_diff_block = NULL;
-    size_t diff;
+    long long int diff;
 
     for (void *now_block = free_list->head; now_block != NULL; now_block = GET_NEXT_FREE(now_block))
     {
