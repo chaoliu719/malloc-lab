@@ -87,7 +87,7 @@ void DISP_PROGRESS()
         fflush(stdout);
     }
 
-    if (DEBUG && c == 4001)
+    if (DEBUG && c == 14401)
     {
         int a = 1;
     }
@@ -199,6 +199,8 @@ void *get_new_block(List *free_list, size_t new_size);
 
 void *split(List *free_list, void *block, size_t new_size);
 
+void reuse(List *free_list, void *block, size_t new_size, void (*free)(List *, void *));
+
 void *get_first_fit(List *free_list, size_t new_size);
 
 void *get_best_fit(List *free_list, size_t new_size);
@@ -262,6 +264,28 @@ void *mm_realloc(void *ptr, size_t free_size)
 
 }
 
+void *_mm_malloc(List *free_list, size_t new_size, void *(*list_get)(List *, size_t))
+{
+    // Get fit block
+    void *now_block = list_get(free_list, new_size);
+
+    if (now_block == NULL)
+    {
+        now_block = get_new_block(free_list, new_size);
+    }
+    else
+    {
+        now_block = split(free_list, now_block, new_size);
+    }
+
+    return AVAILABLE(now_block);
+}
+
+void _mm_free(void *block, void (*free)(List *, void *))
+{
+    free(&g_free_list, block);
+}
+
 void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get_block)(List *, size_t),
                   void (*free)(List *, void *))
 {
@@ -284,74 +308,48 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get
     else if (new_size < BLOCK_SIZE(old_block))
     {
         // small -> resize, add remain to freelist
-        size_t remain = BLOCK_SIZE(old_block) - new_size;
-        SET_SIZE(old_block, remain);
-
-        void *new_block = (void *) ((char *) old_block + remain);
-        SET_SIZE(new_block, new_size);
-
-        _mm_free(new_block, free);
+        reuse(free_list, old_block, new_size, free);
 
         return AVAILABLE(old_block);
     }
     else
     {
-        // big -> [check if can merge, check freelist, new], copy
+        // big -> check old merge, get new block, copy data, split and free later block
         size_t *stage_pointer[2] = {GET_PREV_FREE(old_block), GET_NEXT_FREE(old_block)};
         size_t old_size = BLOCK_SIZE(old_block);
 
         _mm_free(old_block, free);  // may merge with other block
 
-        void *new_block = _mm_malloc(free_list, new_size, get_block);
-        //TODO: malloc() break data in old block
-
+        void *new_block = get_block(free_list, new_size);   // instead of malloc(), malloc break data in separate()
 
         if (new_block == NULL)
         {
-            return NULL;
-        }
+            new_block = get_new_block(free_list, new_size);
 
-        // get block address
-        new_block = ORIGINAL(new_block);
-        size_t new_size = BLOCK_SIZE(new_block);
-
-        if (old_block == new_block)
-        {
-            // after merge, old_block has larger size with unchanged content
+            if (new_block == NULL)
+            {
+                return NULL;
+            }
         }
         else
         {
+            list_remove(free_list, new_block);
+        }
+
+        if (old_block != new_block)
+        {
             memmove(new_block, old_block, old_size);
+
         }
 
         SET_SIZE(new_block, new_size);
         SET_PREV_FREE(new_block, stage_pointer[0]);
         SET_NEXT_FREE(new_block, stage_pointer[1]);
 
+        reuse(free_list, new_block, new_size, free);
+
         return AVAILABLE(new_block);
     }
-}
-
-void *_mm_malloc(List *free_list, size_t new_size, void *(*list_get)(List *, size_t))
-{
-    // Get fit block
-    void *now_block = list_get(free_list, new_size);
-
-    if (now_block == NULL)
-    {
-        now_block = get_new_block(free_list, new_size);
-    }
-    else
-    {
-        now_block = split(free_list, now_block, new_size);
-    }
-
-    return AVAILABLE(now_block);
-}
-
-void _mm_free(void *block, void (*free)(List *, void *))
-{
-    free(&g_free_list, block);
 }
 
 void *get_first_fit(List *free_list, size_t new_size)
@@ -481,7 +479,7 @@ void *get_new_block(List *free_list, size_t new_size)
     void *tail_free = free_list->tail;
 
     // try to get block from free list tail
-    if (tail_free && (char *)tail_free + BLOCK_SIZE(tail_free) == (char *) mem_heap_hi() + 1)
+    if (tail_free && (char *) tail_free + BLOCK_SIZE(tail_free) == (char *) mem_heap_hi() + 1)
     {
         if (mem_sbrk(new_size - BLOCK_SIZE(tail_free)) == (void *) -1)
         {
@@ -532,5 +530,22 @@ void *split(List *free_list, void *block, size_t new_size)
     {
         list_remove(free_list, block);
         return block;
+    }
+}
+
+/*
+ * Similar as split, it recycle redundant part at bottom
+ * */
+void reuse(List *free_list, void *block, size_t new_size, void (*free)(List *, void *))
+{
+    if (new_size + 4 * sizeof(size_t) <= BLOCK_SIZE(block))
+    {
+        size_t remain = BLOCK_SIZE(block) - new_size;
+        SET_SIZE(block, remain);
+
+        void *new_block = (void *) ((char *) block + remain);
+        SET_SIZE(new_block, new_size);
+
+        _mm_free(new_block, free);
     }
 }
