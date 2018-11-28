@@ -612,7 +612,7 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 
 	    if (DEBUG)
 	    {
-            printf("[%6d] index:%6d size:%6x type:ALLOC start:%p\n", i + 1, index, size, p);
+            printf("[%6d] index:%6d size:%6x type:ALLOC   start:%p\n", i + 1, index, size, p);
         }
         /*
 	     * Test the range of the new block for correctness and add it 
@@ -642,6 +642,11 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 		malloc_error(tracenum, i, "mm_realloc failed.");
 		return 0;
 	    }
+
+        if (DEBUG)
+        {
+            printf("[%6d] index:%6d size:%6x type:REALLOC start:%p\n", i + 1, index, size, newp);
+        }
 	    
 	    /* Remove the old region from the range list */
 	    remove_range(ranges, oldp);
@@ -677,7 +682,7 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 	    p = trace->blocks[index];
 	    if (DEBUG)
 		{
-			printf("[%6d] index:%6d size:%6x type:FREE  start:%p\n", i+1, index, size, p);
+			printf("[%6d] index:%6d size:%6x type:FREE    start:%p\n", i+1, index, size, p);
 		}
 	    remove_range(ranges, p);
 	    mm_free(p);

@@ -54,6 +54,7 @@ team_t team =
 #define BASE_BLOCK_SIZE (ALIGN(sizeof(size_t) + 2 * sizef(size_t *)))
 
 #define AVAILABLE(now_block) ((void *)((char *)now_block + SIZE_T_SIZE))
+#define ORIGINAL(now_block) (void *) ((char *)now_block - SIZE_T_SIZE)
 
 #define BLOCK_SIZE(now_block) (*(size_t *)now_block & ~0x7)
 #define SET_SIZE(now_block, new_size) (*(size_t *)now_block = new_size)
@@ -72,25 +73,25 @@ int c = 0;
 
 void DISP_PROGRESS()
 {
+    c++;
+
     if (DISP)
     {
-        c++;
         if (c % 1000 == 0)
         {
             printf("\r%d", c);
-        }
-
-        if (DEBUG && c == 349)
-        {
-            int a = 1;
         }
 
         if (c == 1578816)
         { printf("\r-----completed-----\n"); }
         fflush(stdout);
     }
-}
 
+    if (DEBUG && c == 4001)
+    {
+        int a = 1;
+    }
+}
 
 
 /* -----------------------------------list------------------------------------------------ */
@@ -114,7 +115,7 @@ void list_init(List *l, size_t min, size_t max)
 /*
  * remove block from list, return next block in free_list
  * */
-void * list_remove(List *free_list, void * block)
+void *list_remove(List *free_list, void *block)
 {
     size_t *prev_free = GET_PREV_FREE(block);
     size_t *next_free = GET_NEXT_FREE(block);
@@ -160,7 +161,7 @@ void list_insert_after(List *free_list, void *prev_block, void *block)
     else
     {
         // insert after prev_block
-        void * next_free = GET_NEXT_FREE(prev_block);
+        void *next_free = GET_NEXT_FREE(prev_block);
         SET_NEXT_FREE(block, next_free);
         SET_PREV_FREE(block, prev_block);
         SET_NEXT_FREE(prev_block, block);
@@ -178,9 +179,9 @@ List g_free_list;
 
 /* -----------------------------------------tools---------------------------------------- */
 
-void * get_new_block(size_t new_size);
+void *get_new_block(size_t new_size);
 
-void * split(List *free_list, void * block, size_t new_size);
+void *split(List *free_list, void *block, size_t new_size);
 
 void *get_first_fit(List *free_list, size_t new_size);
 
@@ -193,6 +194,9 @@ void ao_free(List *free_list, void *block);
 void *_mm_malloc(List *free_list, size_t new_size, void *(*get_block)(List *, size_t));
 
 void _mm_free(void *block, void (*free)(List *, void *));
+
+void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get_block)(List *, size_t),
+                  void (*free)(List *, void *));
 
 
 /* -----------------------------------------malloc---------------------------------------- */
@@ -226,9 +230,7 @@ void mm_free(void *ptr)
 {
     DISP_PROGRESS();
 
-    void *now_block = (void *) ((char *) ptr - SIZE_T_SIZE);
-
-    _mm_free(now_block, ao_free);
+    _mm_free(ORIGINAL(ptr), ao_free);
 }
 
 /*
@@ -238,47 +240,94 @@ void *mm_realloc(void *ptr, size_t free_size)
 {
     DISP_PROGRESS();
 
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+    size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
 
-    if (oldptr == NULL)
-    {
-        newptr = mm_malloc(free_size);
-        return newptr;
-    }
+    return _mm_realloc(&g_free_list, ORIGINAL(ptr), new_size, get_first_fit, lifo_free);
 
-    if (free_size == 0)
-    {
-        mm_free(oldptr);
-        return NULL;
-    }
-
-    newptr = mm_malloc(free_size);
-    if (newptr == NULL)
-    {
-        return NULL;
-    }
-
-    copySize = *(size_t * )((char *) oldptr - SIZE_T_SIZE);
-    if (free_size < copySize)
-    {
-        copySize = free_size;
-    }
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
 }
 
+void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get_block)(List *, size_t),
+                  void (*free)(List *, void *))
+{
+    if (old_block == NULL)
+    {
+        return mm_malloc(new_size);
+    }
 
-void *_mm_malloc(List *free_list, size_t new_size, void *(*get_block)(List *, size_t))
+    if (new_size == 0)
+    {
+        mm_free(old_block);
+        return NULL;
+    }
+
+    if (new_size == BLOCK_SIZE(old_block))
+    {
+        // equal -> return
+        return AVAILABLE(old_block);
+    }
+    else if (new_size < BLOCK_SIZE(old_block))
+    {
+        // small -> resize, add remain to freelist
+        size_t remain = BLOCK_SIZE(old_block) - new_size;
+        SET_SIZE(old_block, remain);
+
+        void *new_block = (void *) ((char *) old_block + remain);
+        SET_SIZE(new_block, new_size);
+
+        _mm_free(new_block, free);
+
+        return AVAILABLE(old_block);
+    }
+    else
+    {
+        // big -> [check if can merge, check freelist, new], copy
+        size_t *stage_pointer[2] = {GET_PREV_FREE(old_block), GET_NEXT_FREE(old_block)};
+        size_t old_size = BLOCK_SIZE(old_block);
+
+        _mm_free(old_block, free);  // may merge with other block
+
+        void *new_block = _mm_malloc(free_list, new_size, get_block);
+        //TODO: malloc() break data in old block
+
+
+        if (new_block == NULL)
+        {
+            return NULL;
+        }
+
+        // get block address
+        new_block = ORIGINAL(new_block);
+        size_t new_size = BLOCK_SIZE(new_block);
+
+        if (old_block == new_block)
+        {
+            // after merge, old_block has larger size with unchanged content
+        }
+        else
+        {
+            memmove(new_block, old_block, old_size);
+        }
+
+        SET_SIZE(new_block, new_size);
+        SET_PREV_FREE(new_block, stage_pointer[0]);
+        SET_NEXT_FREE(new_block, stage_pointer[1]);
+
+        return AVAILABLE(new_block);
+    }
+}
+
+void *_mm_malloc(List *free_list, size_t new_size, void *(*list_get)(List *, size_t))
 {
     // Get fit block
-    void *now_block = get_block(free_list, new_size);
+    void *now_block = list_get(free_list, new_size);
 
-    if (NULL == now_block)
+    if (now_block == NULL)
     {
-        return NULL;
+        now_block = get_new_block(new_size);
+    }
+    else
+    {
+        now_block = split(free_list, now_block, new_size);
     }
 
     return AVAILABLE(now_block);
@@ -291,17 +340,16 @@ void _mm_free(void *block, void (*free)(List *, void *))
 
 void *get_first_fit(List *free_list, size_t new_size)
 {
-    void *now_block = NULL;
-    for (now_block = free_list->head; now_block != NULL; now_block = GET_NEXT_FREE(now_block))
+    for (void *now_block = free_list->head; now_block != NULL; now_block = GET_NEXT_FREE(now_block))
     {
         if (BLOCK_SIZE(now_block) >= new_size)
         {
-            return split(free_list, now_block, new_size);
+            return now_block;
         }
     }
 
     // Cannot find fit block.
-    return get_new_block(new_size);
+    return NULL;
 }
 
 void *get_best_fit(List *free_list, size_t new_size)
@@ -315,7 +363,6 @@ void *get_best_fit(List *free_list, size_t new_size)
         diff = BLOCK_SIZE(now_block) - new_size;
         if (0 == diff)
         {
-            list_remove(free_list, now_block);
             return now_block;
         }
         else if (0 < diff && min_diff > diff)
@@ -327,21 +374,19 @@ void *get_best_fit(List *free_list, size_t new_size)
 
     if (min_diff_block != NULL)
     {
-        return split(free_list, min_diff_block, new_size);
+        return min_diff_block;
     }
-    else
-    {
-        return get_new_block(new_size);
-    }
+
+    return NULL;
 }
 
 void lifo_free(List *free_list, void *new_block)
 {
-    void * ultimate_block = new_block;                                  // merge blocks to there
+    void *ultimate_block = new_block;                                  // merge blocks to there
     int total_size = BLOCK_SIZE(new_block);                             // totally merge size
-    void * next_block = (char *) new_block + BLOCK_SIZE(new_block);     // new_block can merge with this block
+    void *next_block = (char *) new_block + BLOCK_SIZE(new_block);     // new_block can merge with this block
 
-    for (void *old_block = free_list->head; old_block != NULL; )
+    for (void *old_block = free_list->head; old_block != NULL;)
     {
         if (old_block == next_block)
         {
@@ -372,12 +417,12 @@ void lifo_free(List *free_list, void *new_block)
 
 void ao_free(List *free_list, void *new_block)
 {
-    void * prev_block = NULL;
-    void * ultimate_block = new_block;
+    void *prev_block = NULL;
+    void *ultimate_block = new_block;
     int total_size = BLOCK_SIZE(new_block);
-    void * next_block = (char *) new_block + BLOCK_SIZE(new_block);
+    void *next_block = (char *) new_block + BLOCK_SIZE(new_block);
 
-    for (void *old_block = free_list->head; old_block != NULL; )
+    for (void *old_block = free_list->head; old_block != NULL;)
     {
         if (old_block >= next_block)
         {
@@ -415,9 +460,9 @@ void ao_free(List *free_list, void *new_block)
     }
 }
 
-void * get_new_block(size_t new_size)
+void *get_new_block(size_t new_size)
 {
-    void * block = (char *) mem_heap_hi() + 1;
+    void *block = (char *) mem_heap_hi() + 1;
 
     if (mem_sbrk(new_size) == (void *) -1)
     {
@@ -433,7 +478,7 @@ void * get_new_block(size_t new_size)
 /*
  * Split block by new size, return suitable block
  * */
-void * split(List *free_list, void * block, size_t new_size)
+void *split(List *free_list, void *block, size_t new_size)
 {
     // Block is too large
     if (BLOCK_SIZE(block) - new_size >= 4 * sizeof(size_t))
