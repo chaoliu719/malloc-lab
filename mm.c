@@ -99,6 +99,7 @@ void DISP_PROGRESS()
 typedef struct _list
 {
     char *head;
+    char *tail;
     size_t max_capacity;
     size_t min_capacity;
     size_t cnt;
@@ -107,6 +108,7 @@ typedef struct _list
 void list_init(List *l, size_t min, size_t max)
 {
     l->head = NULL;
+    l->tail = NULL;
     l->max_capacity = max;
     l->min_capacity = min;
     l->cnt = 0;
@@ -135,6 +137,11 @@ void *list_remove(List *free_list, void *block)
         free_list->head = (char *) next_free;
     }
 
+    if (free_list->tail == block)
+    {
+        free_list->tail = (char *) prev_free;
+    }
+
     free_list->cnt -= 1;
 
     return next_free;
@@ -155,6 +162,10 @@ void list_insert_after(List *free_list, void *prev_block, void *block)
         {
             SET_PREV_FREE(free_list->head, block);
         }
+        else
+        {
+            free_list->tail = block;
+        }
 
         free_list->head = block;
     }
@@ -169,6 +180,11 @@ void list_insert_after(List *free_list, void *prev_block, void *block)
         {
             SET_PREV_FREE(next_free, block);
         }
+        else
+        {
+            free_list->tail = block;
+        }
+
     }
 
     free_list->cnt += 1;
@@ -179,7 +195,7 @@ List g_free_list;
 
 /* -----------------------------------------tools---------------------------------------- */
 
-void *get_new_block(size_t new_size);
+void *get_new_block(List *free_list, size_t new_size);
 
 void *split(List *free_list, void *block, size_t new_size);
 
@@ -323,7 +339,7 @@ void *_mm_malloc(List *free_list, size_t new_size, void *(*list_get)(List *, siz
 
     if (now_block == NULL)
     {
-        now_block = get_new_block(new_size);
+        now_block = get_new_block(free_list, new_size);
     }
     else
     {
@@ -460,19 +476,39 @@ void ao_free(List *free_list, void *new_block)
     }
 }
 
-void *get_new_block(size_t new_size)
+void *get_new_block(List *free_list, size_t new_size)
 {
-    void *block = (char *) mem_heap_hi() + 1;
+    void *tail_free = free_list->tail;
 
-    if (mem_sbrk(new_size) == (void *) -1)
+    // try to get block from free list tail
+    if (tail_free && (char *)tail_free + BLOCK_SIZE(tail_free) == (char *) mem_heap_hi() + 1)
     {
-        return NULL;
+        if (mem_sbrk(new_size - BLOCK_SIZE(tail_free)) == (void *) -1)
+        {
+            return NULL;
+        }
+        else
+        {
+            SET_SIZE(tail_free, new_size);
+            list_remove(free_list, tail_free);
+            return tail_free;
+        }
     }
     else
     {
-        SET_SIZE(block, new_size);
-        return block;
+        void *block = (char *) mem_heap_hi() + 1;
+
+        if (mem_sbrk(new_size) == (void *) -1)
+        {
+            return NULL;
+        }
+        else
+        {
+            SET_SIZE(block, new_size);
+            return block;
+        }
     }
+
 }
 
 /*
