@@ -3,7 +3,7 @@
  *
  * In this naive approach, a block is allocated by simply incrementing
  * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
+ * footers.  Blocks are never coalesced or recycled. Realloc is
  * implemented directly using mm_malloc and mm_free.
  *
  * NOTE TO STUDENTS: Replace this header comment with your own header
@@ -199,21 +199,21 @@ void *get_new_block(List *free_list, size_t new_size);
 
 void *split(List *free_list, void *block, size_t new_size);
 
-void reuse(List *free_list, void *block, size_t new_size, void (*free)(List *, void *));
+void recycle(List *free_list, void *block, size_t new_size, void (*free)(List *, void *));
 
-void *get_first_fit(List *free_list, size_t new_size);
+void *find_first_fit(List *free_list, size_t new_size);
 
-void *get_best_fit(List *free_list, size_t new_size);
+void *find_best_fit(List *free_list, size_t new_size);
 
 void lifo_free(List *free_list, void *block);
 
 void ao_free(List *free_list, void *block);
 
-void *_mm_malloc(List *free_list, size_t new_size, void *(*get_block)(List *, size_t));
+void *_mm_malloc(List *free_list, size_t new_size, void *(*list_find)(List *, size_t));
 
 void _mm_free(void *block, void (*free)(List *, void *));
 
-void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get_block)(List *, size_t),
+void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*list_find)(List *, size_t),
                   void (*free)(List *, void *));
 
 
@@ -238,7 +238,7 @@ void *mm_malloc(size_t free_size)
 
     size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
 
-    return _mm_malloc(&g_free_list, new_size, get_first_fit);
+    return _mm_malloc(&g_free_list, new_size, find_first_fit);
 }
 
 /*
@@ -260,14 +260,14 @@ void *mm_realloc(void *ptr, size_t free_size)
 
     size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
 
-    return _mm_realloc(&g_free_list, ORIGINAL(ptr), new_size, get_first_fit, lifo_free);
+    return _mm_realloc(&g_free_list, ORIGINAL(ptr), new_size, find_first_fit, lifo_free);
 
 }
 
-void *_mm_malloc(List *free_list, size_t new_size, void *(*list_get)(List *, size_t))
+void *_mm_malloc(List *free_list, size_t new_size, void *(*list_find)(List *, size_t))
 {
-    // Get fit block
-    void *now_block = list_get(free_list, new_size);
+    // Find fit block
+    void *now_block = list_find(free_list, new_size);
 
     if (now_block == NULL)
     {
@@ -286,7 +286,7 @@ void _mm_free(void *block, void (*free)(List *, void *))
     free(&g_free_list, block);
 }
 
-void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get_block)(List *, size_t),
+void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*list_find)(List *, size_t),
                   void (*free)(List *, void *))
 {
     if (old_block == NULL)
@@ -308,7 +308,7 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get
     else if (new_size < BLOCK_SIZE(old_block))
     {
         // small -> resize, add remain to freelist
-        reuse(free_list, old_block, new_size, free);
+        recycle(free_list, old_block, new_size, free);
 
         return AVAILABLE(old_block);
     }
@@ -320,7 +320,7 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get
 
         _mm_free(old_block, free);  // may merge with other block
 
-        void *new_block = get_block(free_list, new_size);   // instead of malloc(), malloc break data in separate()
+        void *new_block = list_find(free_list, new_size);   // instead of malloc(), malloc break data in split()
 
         if (new_block == NULL)
         {
@@ -339,20 +339,19 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*get
         if (old_block != new_block)
         {
             memmove(new_block, old_block, old_size);
-
         }
 
         SET_SIZE(new_block, new_size);
         SET_PREV_FREE(new_block, stage_pointer[0]);
         SET_NEXT_FREE(new_block, stage_pointer[1]);
 
-        reuse(free_list, new_block, new_size, free);
+        recycle(free_list, new_block, new_size, free);
 
         return AVAILABLE(new_block);
     }
 }
 
-void *get_first_fit(List *free_list, size_t new_size)
+void *find_first_fit(List *free_list, size_t new_size)
 {
     for (void *now_block = free_list->head; now_block != NULL; now_block = GET_NEXT_FREE(now_block))
     {
@@ -362,11 +361,10 @@ void *get_first_fit(List *free_list, size_t new_size)
         }
     }
 
-    // Cannot find fit block.
     return NULL;
 }
 
-void *get_best_fit(List *free_list, size_t new_size)
+void *find_best_fit(List *free_list, size_t new_size)
 {
     long long int min_diff = LLONG_MIN;
     void *min_diff_block = NULL;
@@ -506,7 +504,6 @@ void *get_new_block(List *free_list, size_t new_size)
             return block;
         }
     }
-
 }
 
 /*
@@ -536,7 +533,7 @@ void *split(List *free_list, void *block, size_t new_size)
 /*
  * Similar as split, it recycle redundant part at bottom
  * */
-void reuse(List *free_list, void *block, size_t new_size, void (*free)(List *, void *))
+void recycle(List *free_list, void *block, size_t new_size, void (*free)(List *, void *))
 {
     if (new_size + 4 * sizeof(size_t) <= BLOCK_SIZE(block))
     {
