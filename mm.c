@@ -76,9 +76,9 @@ void DISPLAY_PROGRESS()
         fflush(stdout);
     }
 
-    if (DEBUG && c == 14401)
+    if (DEBUG && c == 6)
     {
-        ;
+        int a = 1;
     }
 }
 
@@ -297,6 +297,12 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*lis
     else if (new_size < BLOCK_SIZE(old_block))
     {
         // small -> resize, add remain to freelist
+
+        if (2 * new_size >= BLOCK_SIZE(old_block))
+        {
+            return AVAILABLE(old_block);
+        }
+
         recycle(free_list, old_block, new_size, free);
 
         return AVAILABLE(old_block);
@@ -304,6 +310,24 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*lis
     else
     {
         // big -> check old merge, get new block, copy data, split and free later block
+
+
+        size_t ons = new_size;
+        size_t os = BLOCK_SIZE(old_block);
+        if (2 * BLOCK_SIZE(old_block) > new_size)
+        {
+            new_size = 2 * BLOCK_SIZE(old_block);
+        }
+        else
+        {
+            new_size = new_size + BLOCK_SIZE(old_block);
+        }
+        if (DEBUG)
+        {
+            printf("Old: %ld; Old_new: %ld; New_new: %ld\n", os, ons, new_size);
+
+        }
+
         size_t *stage_pointer[2] = {GET_PREV_FREE(old_block), GET_NEXT_FREE(old_block)};
         size_t old_size = BLOCK_SIZE(old_block);
 
@@ -525,10 +549,10 @@ void recycle(List *free_list, void *block, size_t new_size, void (*free)(List *,
     if (new_size + 4 * sizeof(size_t) <= BLOCK_SIZE(block))
     {
         size_t remain = BLOCK_SIZE(block) - new_size;
-        SET_SIZE(block, remain);
+        SET_SIZE(block, new_size);
 
-        void *new_block = (void *) ((char *) block + remain);
-        SET_SIZE(new_block, new_size);
+        void *new_block = (void *) ((char *) block + new_size);
+        SET_SIZE(new_block, remain);
 
         _mm_free(new_block, free);
     }
