@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <assert.h>
 #include <limits.h>
 
@@ -33,37 +34,37 @@ team_t team =
 
 
 /* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(free_size) (((free_size) + (ALIGNMENT-1)) & ~0x7)
+#define ALIGN(free_size) (((free_size) + (ALIGNMENT-1)) & ~0x7u)
 
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 /* base block size: store size and two pointers */
-#define BASE_BLOCK_SIZE (ALIGN(sizeof(size_t) + 2 * sizef(size_t *)))
+#define BASE_BLOCK_SIZE (ALIGN(sizeof(size_t) + 2 * sizeof(size_t *)))
 
-#define AVAILABLE(now_block) ((void *)((char *)now_block + SIZE_T_SIZE))
-#define ORIGINAL(now_block) (void *) ((char *)now_block - SIZE_T_SIZE)
+#define AVAILABLE(now_block) ((void *)((char *)(now_block) + SIZE_T_SIZE))
+#define ORIGINAL(now_block) (void *) ((char *)(now_block) - SIZE_T_SIZE)
 
-#define BLOCK_SIZE(now_block) (*(size_t *)now_block & ~0x7)
-#define SET_SIZE(now_block, new_size) (*(size_t *)now_block = new_size)
+#define BLOCK_SIZE(now_block) (*(size_t *)(now_block) & ~0x7u)
+#define SET_SIZE(now_block, new_size) (*(size_t *)(now_block) = (new_size))
 
-#define GET_NEXT_FREE_ADDR(now_block) ((void *) ((char *)now_block + sizeof(size_t) + sizeof(size_t *)))
-#define GET_PREV_FREE_ADDR(now_block) ((void *) ((char *)now_block + sizeof(size_t)))
+#define GET_NEXT_FREE_ADDR(now_block) ((void *) ((char *)(now_block) + sizeof(size_t) + sizeof(size_t *)))
+#define GET_PREV_FREE_ADDR(now_block) ((void *) ((char *)(now_block) + sizeof(size_t)))
 #define GET_NEXT_FREE(now_block) ((void *) *(size_t *)GET_NEXT_FREE_ADDR(now_block))
 #define GET_PREV_FREE(now_block) ((void *) *(size_t *)GET_PREV_FREE_ADDR(now_block))
-#define SET_NEXT_FREE(now_block, next_block) {size_t ** tmp = (size_t **) GET_NEXT_FREE_ADDR(now_block); *tmp = (size_t *)next_block;}
-#define SET_PREV_FREE(now_block, prev_block) {size_t ** tmp = (size_t **) GET_PREV_FREE_ADDR(now_block); *tmp = (size_t *)prev_block;}
+#define SET_NEXT_FREE(now_block, next_block) {size_t ** tmp = (size_t **) GET_NEXT_FREE_ADDR(now_block); *tmp = (size_t *)(next_block);}
+#define SET_PREV_FREE(now_block, prev_block) {size_t ** tmp = (size_t **) GET_PREV_FREE_ADDR(now_block); *tmp = (size_t *)(prev_block);}
 
 
 /* ---------------------------------------Debug------------------------------------------- */
 
 int c = 0;
 
-void DISP_PROGRESS()
+void DISPLAY_PROGRESS()
 {
     c++;
 
-    if (DISP)
+    if (DISPLAY)
     {
         if (c % 1000 == 0)
         {
@@ -77,7 +78,7 @@ void DISP_PROGRESS()
 
     if (DEBUG && c == 14401)
     {
-        int a = 1;
+        ;
     }
 }
 
@@ -193,9 +194,9 @@ void *find_first_fit(List *free_list, size_t new_size);
 
 void *find_best_fit(List *free_list, size_t new_size);
 
-void lifo_free(List *free_list, void *block);
+void lifo_free(List *free_list, void *new_block);
 
-void ao_free(List *free_list, void *block);
+void ao_free(List *free_list, void *new_block);
 
 void *_mm_malloc(List *free_list, size_t new_size, void *(*list_find)(List *, size_t));
 
@@ -222,7 +223,7 @@ int mm_init(void)
  */
 void *mm_malloc(size_t free_size)
 {
-    DISP_PROGRESS();
+    DISPLAY_PROGRESS();
 
     size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
 
@@ -234,9 +235,9 @@ void *mm_malloc(size_t free_size)
  */
 void mm_free(void *ptr)
 {
-    DISP_PROGRESS();
+    DISPLAY_PROGRESS();
 
-    _mm_free(ORIGINAL(ptr), ao_free);
+    _mm_free(ORIGINAL(ptr), lifo_free);
 }
 
 /*
@@ -244,7 +245,7 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t free_size)
 {
-    DISP_PROGRESS();
+    DISPLAY_PROGRESS();
 
     size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
 
@@ -354,20 +355,18 @@ void *find_first_fit(List *free_list, size_t new_size)
 
 void *find_best_fit(List *free_list, size_t new_size)
 {
-    long long int min_diff = LLONG_MIN;
+    size_t min_diff = SIZE_MAX;
     void *min_diff_block = NULL;
-    long long int diff;
 
     for (void *now_block = free_list->head; now_block != NULL; now_block = GET_NEXT_FREE(now_block))
     {
-        diff = BLOCK_SIZE(now_block) - new_size;
-        if (0 == diff)
+        if (BLOCK_SIZE(now_block) == new_size)
         {
             return now_block;
         }
-        else if (0 < diff && min_diff > diff)
+        else if (BLOCK_SIZE(now_block) > new_size && min_diff > BLOCK_SIZE(now_block) - new_size)
         {
-            min_diff = diff;
+            min_diff = BLOCK_SIZE(now_block) - new_size;
             min_diff_block = now_block;
         }
     }
@@ -383,7 +382,7 @@ void *find_best_fit(List *free_list, size_t new_size)
 void lifo_free(List *free_list, void *new_block)
 {
     void *ultimate_block = new_block;                                  // merge blocks to there
-    int total_size = BLOCK_SIZE(new_block);                             // totally merge size
+    size_t total_size = BLOCK_SIZE(new_block);                         // totally merge size
     void *next_block = (char *) new_block + BLOCK_SIZE(new_block);     // new_block can merge with this block
 
     for (void *old_block = free_list->head; old_block != NULL;)
@@ -419,7 +418,7 @@ void ao_free(List *free_list, void *new_block)
 {
     void *prev_block = NULL;
     void *ultimate_block = new_block;
-    int total_size = BLOCK_SIZE(new_block);
+    size_t total_size = BLOCK_SIZE(new_block);
     void *next_block = (char *) new_block + BLOCK_SIZE(new_block);
 
     for (void *old_block = free_list->head; old_block != NULL;)
@@ -500,7 +499,7 @@ void *get_new_block(List *free_list, size_t new_size)
 void *split(List *free_list, void *block, size_t new_size)
 {
     // Block is too large
-    if (BLOCK_SIZE(block) - new_size >= 4 * sizeof(size_t))
+    if (BLOCK_SIZE(block) - new_size >= BASE_BLOCK_SIZE)
     {
         size_t remain = BLOCK_SIZE(block) - new_size;
         SET_SIZE(block, remain);
