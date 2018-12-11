@@ -3,6 +3,7 @@ project(mallocLab)
 
 set(CMAKE_C_STANDARD_REQUIRED 11)
 
-add_executable(mdriver mdriver.c mm.c clock.c fcyc.c fsecs.c ftimer.c memlib.c)
+set(MDRIVER mdriver.c memlib.c mm.c fsecs.c fcyc.c ftimer.c clock.c)
+add_executable(mdriver ${MDRIVER})
 
-#add_custom_target(mdriver COMMAND make -C ${mallocLab_SOURCE_DIR} CLION_EXE_DIR=${PROJECT_BINARY_DIR})
+# add_custom_target(mdriver COMMAND make -C ${mallocLab_SOURCE_DIR} CLION_EXE_DIR=${PROJECT_BINARY_DIR})

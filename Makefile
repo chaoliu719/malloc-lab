@@ -1,10 +1,3 @@
-
-# Students' Makefile for the Malloc Lab
-#
-TEAM = bovik
-VERSION = 1
-HANDINDIR = /afs/cs.cmu.edu/academic/class/15213-f01/malloclab/handin
-
 CC = gcc
 CFLAGS = -g #-O2 #-m32 -Wall 
 INC = -I /usr/include/x86_64-linux-gnu 
@@ -21,10 +14,6 @@ fcyc.o: fcyc.c fcyc.h
 ftimer.o: ftimer.c ftimer.h config.h
 clock.o: clock.c clock.h
 
-handin:
-	cp mm.c $(HANDINDIR)/$(TEAM)-$(VERSION)-mm.c
-
 clean:
 	rm -f *~ *.o mdriver
-
 
