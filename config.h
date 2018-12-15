@@ -21,7 +21,7 @@
  * your students to implement realloc, you can delete the last two
  * traces.
  */
-#define DEFAULT_TRACEFILES \
+#define D1EFAULT_TRACEFILES \
   "amptjp-bal.rep",\
   "cccp-bal.rep",\
   "cp-decl-bal.rep",\
@@ -33,6 +33,11 @@
   "binary2-bal.rep",\
   "realloc-bal.rep",\
   "realloc2-bal.rep"
+
+
+#define DEFAULT_TRACEFILES \
+  "binary-bal.rep",\
+  "binary2-bal.rep"
 
 /*
  * This constant gives the estimated performance of the libc malloc

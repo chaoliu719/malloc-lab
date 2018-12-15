@@ -680,12 +680,12 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 	    
 	    /* Remove region from list and call student's free function */
 	    p = trace->blocks[index];
-	    if (DEBUG)
-		{
-			printf("[%6d] index:%6d size:%6x type:FREE    start:%p\n", i+1, index, size, p);
-		}
 	    remove_range(ranges, p);
 	    mm_free(p);
+        if (DEBUG)
+        {
+            printf("[%6d] index:%6d size:%6x type:FREE    start:%p\n", i+1, index, size, p);
+        }
 	    break;
 
 	default:

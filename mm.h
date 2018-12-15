@@ -22,4 +22,6 @@ typedef struct {
 extern team_t team;
 
 #define DEBUG 0
+#define USAGE 0
+#define SPACE 0
 #define DISPLAY 0
