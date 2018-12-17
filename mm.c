@@ -230,7 +230,30 @@ void *mm_realloc(void *ptr, size_t free_size)
 
     size_t new_size = ALIGN(free_size + SIZE_T_SIZE);
 
-    return _mm_realloc(&g_free_list, ORIGINAL(ptr), new_size, find_first_fit, lifo_free);
+    size_t *origin = ORIGINAL(ptr);
+
+    if (new_size < BLOCK_SIZE(origin))
+    {
+        if (3 * new_size >= BLOCK_SIZE(origin))
+        {
+            new_size = BLOCK_SIZE(origin);
+        }
+    }
+    else if (new_size > BLOCK_SIZE(origin))
+    {
+        size_t os = BLOCK_SIZE(origin);
+        size_t half_os = ALIGN(BLOCK_SIZE(origin) >> 1u);
+        if (os + half_os > new_size)
+        {
+            new_size = os + half_os;
+        }
+        else
+        {
+            new_size = new_size + half_os;
+        }
+    }
+
+    return _mm_realloc(&g_free_list, origin, new_size, find_first_fit, lifo_free);
 
 }
 
@@ -286,12 +309,6 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*lis
     else if (new_size < BLOCK_SIZE(old_block))
     {
         // small -> resize, add remain to freelist
-
-        if (3 * new_size >= BLOCK_SIZE(old_block))
-        {
-            return AVAILABLE(old_block);
-        }
-
         recycle(free_list, old_block, new_size, free);
 
         return AVAILABLE(old_block);
@@ -299,17 +316,6 @@ void *_mm_realloc(List *free_list, void *old_block, size_t new_size, void *(*lis
     else
     {
         // big -> check old merge, get new block, copy data, split and free later block
-
-        size_t os = BLOCK_SIZE(old_block);
-        size_t half_os = ALIGN(BLOCK_SIZE(old_block) >> 1u);
-        if (os + half_os > new_size)
-        {
-            new_size = os + half_os;
-        }
-        else
-        {
-            new_size = new_size + half_os;
-        }
 
         size_t *stage_pointer[2] = {GET_PREV_FREE(old_block), GET_NEXT_FREE(old_block)};
         size_t old_size = BLOCK_SIZE(old_block);
@@ -648,7 +654,7 @@ void display_progress()
         {
             free += BLOCK_SIZE(p);
         }
-        printf("%.0f\n", (double)(all - free) * 100 /all);
+        printf("%.0f\n", (double) (all - free) * 100 / all);
     }
 
 
